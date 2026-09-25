@@ -2,46 +2,32 @@
 
 set -e
 
-SOURCE="wcp.sh"
+SOURCE_URL="https://raw.githubusercontent.com/kiammota/wcp/main/wcp.sh"
+INSTALL_NAME="wcp"
 
-if [ ! -f "$SOURCE" ]; then
-    echo "Error: $SOURCE not found."
-    exit 1
-fi
+echo "Install wcp globally? [y/N]"
+read answer
 
-echo "Where do you want to install wcp?"
-echo "1) Local   (~/.local/bin)"
-echo "2) Global  (/usr/local/bin)"
-printf "Choose [1/2]: "
-
-read choice
-
-case "$choice" in
-    1)
-        INSTALL_DIR="$HOME/.local/bin"
-        ;;
-    2)
+case "$answer" in
+    y|Y)
         INSTALL_DIR="/usr/local/bin"
-
-        if [ "$(id -u)" -ne 0 ]; then
-            SUDO="sudo"
-        fi
         ;;
     *)
-        echo "Invalid choice."
-        exit 1
+        INSTALL_DIR="$HOME/.local/bin"
         ;;
 esac
 
-if [ -n "${SUDO:-}" ]; then
-    $SUDO mkdir -p "$INSTALL_DIR"
-    $SUDO cp "$SOURCE" "$INSTALL_DIR/wcp"
-    $SUDO chmod +x "$INSTALL_DIR/wcp"
+mkdir -p "$INSTALL_DIR"
+
+if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$SOURCE_URL" -o "$INSTALL_DIR/$INSTALL_NAME"
+elif command -v wget >/dev/null 2>&1; then
+    wget -q "$SOURCE_URL" -O "$INSTALL_DIR/$INSTALL_NAME"
 else
-    mkdir -p "$INSTALL_DIR"
-    cp "$SOURCE" "$INSTALL_DIR/wcp"
-    chmod +x "$INSTALL_DIR/wcp"
+    echo "Error: curl or wget is required."
+    exit 1
 fi
 
-echo "wcp installed successfully."
-echo "Location: $INSTALL_DIR/wcp"
+chmod +x "$INSTALL_DIR/$INSTALL_NAME"
+
+echo "wcp installed successfully at $INSTALL_DIR/$INSTALL_NAME"
