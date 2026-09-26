@@ -1,117 +1,104 @@
 #!/bin/sh
-# wcp - copy file(s) as file:// URIs to Wayland clipboard (text/uri-list)
-# Optimized for pasting into browsers / file upload fields.
-# Aimed at POSIX sh (with common Linux utilities).
+# install.sh - installs wcp and wps (Wayland clipboard copy/paste tools)
+# Works both from a cloned repo (uses local wcp.sh/wps.sh) and via
+# `curl -fsSL .../install.sh | sh` (downloads the scripts on the fly).
 
 set -eu
+
+REPO_RAW_BASE="https://raw.githubusercontent.com/kiammota/wcp/main"
 
 die() {
     printf 'Error: %s\n' "$*" >&2
     exit 1
 }
 
-usage() {
-    cat <<EOF
-Usage: ${0##*/} <file1> [file2 ...]
-       ${0##*/} < file          (or pipe content)
-
-Copy files to the Wayland clipboard as file:// URIs (text/uri-list).
-Compatible with browsers, file managers and most Wayland applications.
-
-When used with a pipe/stdin, the content is copied as plain text.
-
-Examples:
-  wcp foto.jpg video.mp4
-  wcp "arquivo com espaço.mp3"
-  ls *.pdf | xargs wcp
-  git diff | wcp
-  cat README.md | wcp
-
-Options:
-  -h, --help    Show this help message
-EOF
-    exit 0
+info() {
+    printf '%s\n' "$*" >&2
 }
 
-# Get absolute path (POSIX-friendly)
-# Prefers realpath when available, falls back to portable method
-abs_path() {
-    file="$1"
+# Locate a script: prefer a local copy sitting next to this installer,
+# fall back to downloading it from the repo (curl-pipe install case).
+fetch_script() {
+    name="$1"       # e.g. wcp.sh
+    dest="$2"       # temp path to write to
 
-    if command -v realpath >/dev/null 2>&1; then
-        realpath -- "$file"
+    script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || script_dir=""
+
+    if [ -n "$script_dir" ] && [ -f "$script_dir/$name" ]; then
+        cp -- "$script_dir/$name" "$dest"
         return
     fi
 
-    # Portable fallback (does not fully resolve all symlink levels)
-    case "$file" in
-        /*) printf '%s\n' "$file" ;;
-        *)
-            # Make absolute relative to current directory
-            dir=$(CDPATH= cd -- "$(dirname -- "$file")" && pwd) || die "cannot resolve directory of: $file"
-            base=$(basename -- "$file")
-            printf '%s/%s\n' "$dir" "$base"
-            ;;
-    esac
-}
-
-# Convert absolute path → properly percent-encoded file:// URI
-path_to_uri() {
-    path="$1"
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c '
-import sys, pathlib
-p = pathlib.Path(sys.argv[1]).resolve()
-print(p.as_uri())
-' "$path"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$REPO_RAW_BASE/$name" -o "$dest" || die "failed to download $name"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q "$REPO_RAW_BASE/$name" -O "$dest" || die "failed to download $name"
     else
-        # Fallback without percent-encoding (works for simple ASCII paths)
-        printf 'file://%s\n' "$path"
+        die "cannot locate $name locally and neither curl nor wget is available."
     fi
 }
 
-# ---- main ----
+# ---- checks ----
 
-# Piped / non-TTY input → forward to wl-copy (POSIX way to detect pipe)
-if [ ! -t 0 ]; then
-    exec wl-copy
+[ "$(uname -s)" = "Linux" ] || die "wcp/wps require Linux."
+
+if ! command -v wl-copy >/dev/null 2>&1 || ! command -v wl-paste >/dev/null 2>&1; then
+    info "Warning: 'wl-clipboard' does not seem to be installed."
+    info "wcp and wps will not work until you install it (e.g. apt install wl-clipboard)."
 fi
 
-# Help
-case "${1:-}" in
-    -h|--help)
-        usage
+# ---- choose install location ----
+
+info "Where do you want to install wcp and wps?"
+info "  1) Local  (~/.local/bin)"
+info "  2) Global (/usr/local/bin, requires sudo)"
+printf 'Choose [1/2]: ' >&2
+read -r choice
+
+case "$choice" in
+    1)
+        target_dir="$HOME/.local/bin"
+        use_sudo=""
+        ;;
+    2)
+        target_dir="/usr/local/bin"
+        if [ "$(id -u)" -ne 0 ]; then
+            command -v sudo >/dev/null 2>&1 || die "sudo not found; re-run as root for a global install."
+            use_sudo="sudo"
+        else
+            use_sudo=""
+        fi
+        ;;
+    *)
+        die "invalid choice: $choice"
         ;;
 esac
 
-[ "$#" -ge 1 ] || usage
+mkdir -p -- "$target_dir" 2>/dev/null || $use_sudo mkdir -p -- "$target_dir"
 
-# Platform checks
-[ "$(uname -s)" = "Linux" ] || die "wcp requires Linux."
-[ -n "${WAYLAND_DISPLAY:-}" ] || die "Wayland environment not detected (WAYLAND_DISPLAY is empty)."
-command -v wl-copy >/dev/null 2>&1 || {
-    die "wl-copy not found. Install the 'wl-clipboard' package."
-}
+# ---- install both tools ----
 
-# Build the uri-list
-uri_list=""
-count=0
+tmp_dir=$(mktemp -d) || die "cannot create temp directory"
+trap 'rm -rf "$tmp_dir"' EXIT
 
-for file in "$@"; do
-    [ -e "$file" ] || die "file does not exist: $file"
-
-    abs=$(abs_path "$file") || die "cannot resolve path: $file"
-    uri=$(path_to_uri "$abs")
-
-    if [ -z "$uri_list" ]; then
-        uri_list="$uri"
-    else
-        # RFC 2483 recommends \r\n
-        uri_list="${uri_list}$(printf '\r\n')${uri}"
-    fi
-    count=$((count + 1))
+for name in wcp wps; do
+    fetch_script "$name.sh" "$tmp_dir/$name"
+    chmod +x "$tmp_dir/$name"
+    $use_sudo cp -- "$tmp_dir/$name" "$target_dir/$name" || die "failed to install $name"
+    info "Installed $name -> $target_dir/$name"
 done
 
-printf '%s' "$uri_list" | wl-copy -t text/uri-list
+# ---- PATH check ----
 
-printf '%d file(s) copied to clipboard as text/uri-list\n' "$count" >&2
+case ":$PATH:" in
+    *":$target_dir:"*) ;;
+    *)
+        info ""
+        info "Note: $target_dir is not in your PATH."
+        info "Add this to your shell rc file:"
+        info "  export PATH=\"$target_dir:\$PATH\""
+        ;;
+esac
+
+info ""
+info "Done. Try: wcp file.txt   /   wps"
