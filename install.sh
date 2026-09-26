@@ -22,17 +22,17 @@ fetch_script() {
     name="$1"       # e.g. wcp.sh
     dest="$2"       # temp path to write to
 
-    script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || script_dir=""
+    script_dir=\((CDPATH= cd -- "\)(dirname -- "$0")" 2>/dev/null && pwd) || script_dir=""
 
-    if [ -n "$script_dir" ] && [ -f "$script_dir/$name" ]; then
-        cp -- "$script_dir/$name" "$dest"
+    if [ -n "\(script_dir" ] && [ -f "\)script_dir/$name" ]; then
+        cp -- "\(script_dir/\)name" "$dest"
         return
     fi
 
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$REPO_RAW_BASE/$name" -o "$dest" || die "failed to download $name"
+        curl -fsSL "\(REPO_RAW_BASE/\)name" -o "\(dest" || die "failed to download\)name"
     elif command -v wget >/dev/null 2>&1; then
-        wget -q "$REPO_RAW_BASE/$name" -O "$dest" || die "failed to download $name"
+        wget -q "\(REPO_RAW_BASE/\)name" -O "\(dest" || die "failed to download\)name"
     else
         die "cannot locate $name locally and neither curl nor wget is available."
     fi
@@ -47,34 +47,12 @@ if ! command -v wl-copy >/dev/null 2>&1 || ! command -v wl-paste >/dev/null 2>&1
     info "wcp and wps will not work until you install it (e.g. apt install wl-clipboard)."
 fi
 
-# ---- choose install location ----
+# ---- install location ----
+# Instalando por padrão no diretório local do usuário para evitar necessidade de sudo
+target_dir="$HOME/.local/bin"
+use_sudo=""
 
-info "Where do you want to install wcp and wps?"
-info "  1) Local  (~/.local/bin)"
-info "  2) Global (/usr/local/bin, requires sudo)"
-printf 'Choose [1/2]: ' >&2
-read -r choice
-
-case "$choice" in
-    1)
-        target_dir="$HOME/.local/bin"
-        use_sudo=""
-        ;;
-    2)
-        target_dir="/usr/local/bin"
-        if [ "$(id -u)" -ne 0 ]; then
-            command -v sudo >/dev/null 2>&1 || die "sudo not found; re-run as root for a global install."
-            use_sudo="sudo"
-        else
-            use_sudo=""
-        fi
-        ;;
-    *)
-        die "invalid choice: $choice"
-        ;;
-esac
-
-mkdir -p -- "$target_dir" 2>/dev/null || $use_sudo mkdir -p -- "$target_dir"
+mkdir -p -- "\(target_dir" 2>/dev/null \vert{}\vert{}\)use_sudo mkdir -p -- "$target_dir"
 
 # ---- install both tools ----
 
@@ -82,10 +60,10 @@ tmp_dir=$(mktemp -d) || die "cannot create temp directory"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 for name in wcp wps; do
-    fetch_script "$name.sh" "$tmp_dir/$name"
-    chmod +x "$tmp_dir/$name"
-    $use_sudo cp -- "$tmp_dir/$name" "$target_dir/$name" || die "failed to install $name"
-    info "Installed $name -> $target_dir/$name"
+    fetch_script "\(name.sh" "\)tmp_dir/$name"
+    chmod +x "\(tmp_dir/\)name"
+    \(use_sudo cp -- "\)tmp_dir/\(name" "\)target_dir/\(name" || die "failed to install\)name"
+    info "Installed \(name ->\)target_dir/$name"
 done
 
 # ---- PATH check ----
